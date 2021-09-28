@@ -5,12 +5,12 @@ module Event.Analytics.Source where
 -- import Debug.Trace
 
 import Control.Applicative
-import Control.Concurrent.STM
 import Control.Monad
+import Control.Monad.IO.Class
 import Data.Dynamic
+import Data.IORef
 import Data.Typeable hiding (TypeRep, typeOf, typeRep)
-import Data.Unique
-import GHC.Conc (unsafeIOToSTM)
+import Event.Analytics.Monad
 import Language.Edh.MHI
 import Type.Reflection
 import Prelude
@@ -20,57 +20,16 @@ import Prelude
 -- | Indicates whether the relevant event sink is at end-of-stream
 type EndOfStream = Bool
 
--- | Atomic Event Queue to foster the propagation of an event hierarchy, in a
--- frame by frame basis
+-- | An event handler reacts to a particular event
 --
--- EIO computations can be scheduled into such a queue as either consequences or
--- subsequences, of the realization of a frame of whole event hierarchy, by
--- multiple events spread within such a frame, either directly or indirectly.
-data AtomEvq = AtomEvq
-  { aeq'conseqs :: !(TVar [EIO ()]),
-    aeq'subseqs :: !(TVar [EIO ()])
-  }
-
--- | Schedule an EIO computation as a consequence of the underlying event
--- spreading
---
--- All consequences will be executed after the 'STM' transaction done, which
--- gets some events spread as in current event frame, and before any
--- subsequence is executed. So state changes made by consequent computations
--- are guaranteed to be observed by any subsequent computation.
---
--- Currently all consequent/subsequent actions are required to be exception
--- free, any noncomplying exception will be thrown at the nearest scripting
--- exception handler, with the overall event propagation done halfway (i.e.
--- data consistency issues prone). Such exceptions may get caught & ignored in
--- the future, for consequences / subsequences ever armed uncancellable.
-conseqDo :: EIO () -> AtomEvq -> STM ()
-conseqDo !act (AtomEvq !conseqs _) = modifyTVar' conseqs (act :)
-
--- | Schedule an EIO computation as a subsequence of the underlying event
--- spreading / propagation
---
--- All subsequences will be executed after all consequences have been executed.
--- So state changes made by consequent computations are guaranteed to be
--- observed by any subsequent computation.
---
--- Currently all consequent/subsequent actions are required to be exception
--- free, any noncomplying exception will be thrown at the nearest scripting
--- exception handler, with the overall event propagation done halfway (i.e.
--- data consistency issues prone). Such exceptions may get caught & ignored in
--- the future, for consequences / subsequences ever armed uncancellable.
-subseqDo :: EIO () -> AtomEvq -> STM ()
-subseqDo !act (AtomEvq _ !subseqs) = modifyTVar' subseqs (act :)
-
--- | An event handler reacts to a particular event with an STM computation,
--- returns whether it is still interested in the subsequent events in the same
--- stream
+-- It should return whether it is still interested in the subsequent events
+-- in the same (event source) stream
 --
 -- Further EIO computations can be scheduled into the provided atomic event
 -- queue. Any failure in any event handler will prevent the publishing of the
 -- current event hierarchy at all, the failure will be thrown to the publisher
 -- of the root event.
-type EventHandler t = AtomEvq -> t -> STM HandleSubsequentEvents
+type EventHandler t = t -> EAS HandleSubsequentEvents
 
 data HandleSubsequentEvents = KeepHandling | StopHandling
 
@@ -79,10 +38,10 @@ class EventSource s t where
   --
   -- Some event source can always have the latest event data lingering, some
   -- never, some per specific criteria.
-  lingering :: s t -> STM (Maybe t)
+  lingering :: s t -> EAS (Maybe t)
 
   -- | Handle each event data as it arrives
-  perceive :: s t -> EventHandler t -> STM ()
+  perceive :: s t -> EventHandler t -> EAS ()
 
   -- | Subscribe to the event stream through the specified event source
   --
@@ -91,9 +50,9 @@ class EventSource s t where
   --
   -- The atomic event queue can be used to schedule EIO computations as
   -- consequences or subsequences of the original event.
-  on :: s t -> (t -> AtomEvq -> STM ()) -> STM ()
-  on !evs !handler = perceive evs $ \ !aeq !evd -> do
-    handler evd aeq
+  on :: s t -> (t -> EAS ()) -> EAS ()
+  on !evs !handler = perceive evs $ \ !evd -> do
+    handler evd
     return KeepHandling
 
   -- | Subscribe to the next event through the specified event source
@@ -103,34 +62,21 @@ class EventSource s t where
   --
   -- The atomic event queue can be used to schedule EIO computations as
   -- consequences or subsequences of the original event.
-  once :: s t -> (t -> AtomEvq -> STM ()) -> STM ()
-  once !evs !handler = perceive evs $ \ !aeq !evd -> do
-    handler evd aeq
+  once :: s t -> (t -> EAS ()) -> EAS ()
+  once !evs !handler = perceive evs $ \ !evd -> do
+    handler evd
     return StopHandling
-
--- | Do 'perceive' in the 'Edh' monad
-perceiveM :: (EventSource s t) => s t -> EventHandler t -> Edh ()
-perceiveM evs handler = inlineSTM $ perceive evs handler
-
--- | Do 'on' in the 'Edh' monad
-onM :: (EventSource s t) => s t -> (t -> AtomEvq -> STM ()) -> Edh ()
-onM evs handler = inlineSTM $ on evs handler
-
--- | Do 'once' in the 'Edh' monad
-onceM :: (EventSource s t) => s t -> (t -> AtomEvq -> STM ()) -> Edh ()
-onceM evs handler = inlineSTM $ on evs handler
 
 -- ** SomeEventSource the Functor
 
-data MappedEvs s a b = (EventSource s a) => MappedEvs (s a) (a -> STM b)
+data MappedEvs s a b = (EventSource s a) => MappedEvs (s a) (a -> EAS b)
 
 instance (EventSource s a) => EventSource (MappedEvs s a) b where
   lingering (MappedEvs sa f) =
     lingering sa >>= \case
       Nothing -> return Nothing
       Just a -> Just <$> f a
-  perceive (MappedEvs sa f) handler = perceive sa $ \aeq a ->
-    handler aeq =<< f a
+  perceive (MappedEvs sa f) handler = perceive sa $ handler <=< f
 
 -- | Polymorphic event source value wrapper
 data SomeEventSource t = forall s. (EventSource s t) => SomeEventSource (s t)
@@ -206,43 +152,34 @@ asEventSource o withEvs = case dynamicHostData o of
 -- | An event sink conveys an event stream, with possibly multiple event
 -- producers and / or multiple event consumers
 data EventSink t = EventSink
-  { -- | Unique identifier of the event sink
-    event'sink'ident :: Unique,
-    -- | Subscribed event listeners to this sink
-    event'sink'subscribers :: TVar [EventListener t],
+  { -- | Subscribed event listeners to this sink
+    event'sink'subscribers :: IORef [EventListener t],
     -- | The most recent event data lingering in this sink
-    event'sink'recent :: TVar (Maybe t),
+    event'sink'recent :: IORef (Maybe t),
     -- | Whether this sink is at end-of-stream
-    event'sink'eos :: TVar EndOfStream
+    event'sink'eos :: IORef EndOfStream
   }
 
--- | An event listener reacts to a particular event with an STM computation,
--- returns a possible event listener for the next event in the stream
+-- | An event listener reacts to a particular event
 --
--- Further 'EIO' computations can be scheduled into the provided atomic event
--- queue. Any failure in any event listener will fail all events spread in
--- current 'STM' transaction, as within an event frame
+-- It should return a possible event listener for the next event in the stream
 newtype EventListener t = EventListener
-  {on'event :: AtomEvq -> t -> STM (Maybe (EventListener t))}
+  {on'event :: t -> EAS (Maybe (EventListener t))}
 
 -- | Subscribe an event handler to the event sink
-handleEvents ::
-  forall t.
-  Typeable t =>
-  EventSink t ->
-  EventHandler t ->
-  STM ()
+handleEvents :: forall t. Typeable t => EventSink t -> EventHandler t -> EAS ()
 handleEvents !evs !handler =
-  readTVar eosRef >>= \case
-    True -> return ()
-    False -> modifyTVar' subsRef (keepTriggering :)
+  liftIO $
+    readIORef eosRef >>= \case
+      True -> return ()
+      False -> modifyIORef' subsRef (keepTriggering :)
   where
     eosRef = event'sink'eos evs
     subsRef = event'sink'subscribers evs
 
     keepTriggering :: EventListener t
-    keepTriggering = EventListener $ \aeq !evd ->
-      handler aeq evd >>= \case
+    keepTriggering = EventListener $ \ !evd ->
+      handler evd >>= \case
         KeepHandling -> return (Just keepTriggering)
         StopHandling -> return Nothing
 
@@ -314,105 +251,66 @@ asEventSink o withEvs = case dynamicHostData o of
 
 -- | Create a new event sink
 newEventSinkEdh :: forall t. Edh (EventSink t)
-newEventSinkEdh = inlineSTM newEventSink
+newEventSinkEdh = liftIO newEventSinkIO
 
 -- | Create a new event sink
 newEventSinkEIO :: forall t. EIO (EventSink t)
-newEventSinkEIO = atomicallyEIO newEventSink
+newEventSinkEIO = liftIO newEventSinkIO
 
 -- | Create a new event sink
-newEventSink :: forall t. STM (EventSink t)
-newEventSink = do
-  !esid <- unsafeIOToSTM newUnique
-  !eosRef <- newTVar False
-  !rcntRef <- newTVar Nothing
-  !subsRef <- newTVar []
-  return $ EventSink esid subsRef rcntRef eosRef
+newEventSinkIO :: forall t. IO (EventSink t)
+newEventSinkIO = do
+  !eosRef <- newIORef False
+  !rcntRef <- newIORef Nothing
+  !subsRef <- newIORef []
+  return $ EventSink subsRef rcntRef eosRef
+
+-- | Create a new event sink
+newEventSink :: forall t. EAS (EventSink t)
+newEventSink = easDoEIO newEventSinkEIO
 
 isSameEventSink :: forall a b. EventSink a -> EventSink b -> Bool
-isSameEventSink a b = event'sink'ident a == event'sink'ident b
+isSameEventSink a b = event'sink'eos a == event'sink'eos b
 
 -- | Note identity of event sinks won't change after fmap'ped
 instance Eq (EventSink a) where
   (==) = isSameEventSink
 
 instance (Typeable t) => EventSource EventSink t where
-  lingering = readTVar . event'sink'recent
+  lingering = readIORefEAS . event'sink'recent
   perceive = handleEvents
 
 -- * Event Propagation
-
--- | Run a publisher action, with given event queue and frame driver
---
--- The frame driver is used to realize all effects by consequences/subsequences
--- of all events spreaded before its run, i.e. to drive an event frame
-publishEvents :: forall r. (AtomEvq -> EIO () -> EIO r) -> EIO r
-publishEvents !publisher = do
-  !conseqs <- newTVarEIO []
-  !subseqs <- newTVarEIO []
-  let aeq = AtomEvq conseqs subseqs
-
-      frameDriver :: EIO ()
-      frameDriver = do
-        -- realize all consequences
-        drain conseqs
-        -- realize all subsequences
-        drain subseqs
-        where
-          drain :: TVar [EIO ()] -> EIO ()
-          drain q =
-            readTVarEIO q >>= \case
-              [] -> return ()
-              acts -> do
-                writeTVarEIO q []
-                propagate acts
-                drain q
-          propagate :: [EIO ()] -> EIO ()
-          propagate [] = return ()
-          propagate (act : rest) = do
-            act -- TODO catch any tolerable exception, and keep going
-            propagate rest
-
-  publisher aeq frameDriver
-
--- | Shorthand of 'publishEvents' in 'Edh' monad
-publishEventsM :: forall r. (AtomEvq -> EIO () -> EIO r) -> Edh r
-publishEventsM = liftEIO . publishEvents
 
 -- | Spread one event data into the specified sink, as within current event
 -- frame
 --
 -- Consequent actions will see all event sinks so updated (including but not
--- limited to, lingering recent event data), by events spread in the previous
--- 'STM' transaction, presumbly in the same event frame.
+-- limited to, lingering recent event data), by events spread previously in
+-- the same frame.
 --
 -- Subsequent actions will see all effects applied by consequent actions, and
 -- events spread in subsequent actions have no similar ordering guarantees,
 -- except they'll all be visible to event listeners/handlers,
 -- consequent/subsequent actions, ever since the next event frame.
-spreadEvent :: forall t. Typeable t => AtomEvq -> EventSink t -> t -> STM ()
-spreadEvent !aeq !evs !evd =
-  readTVar eosRef >>= \case
+spreadEvent :: forall t. Typeable t => EventSink t -> t -> EAS ()
+spreadEvent !evs !evd = do
+  let spread ::
+        [EventListener t] ->
+        [EventListener t] ->
+        EAS [EventListener t]
+      spread subsRemain [] =
+        return $! reverse subsRemain -- keep original order
+      spread subsRemain (listener : rest) =
+        on'event listener evd >>= \case
+          Nothing -> spread subsRemain rest
+          Just listener' -> spread (listener' : subsRemain) rest
+  readIORefEAS eosRef >>= \case
     True -> return ()
     False -> do
-      writeTVar rcntRef $ Just evd
-      readTVar subsRef >>= spread [] >>= writeTVar subsRef
+      writeIORefEAS rcntRef $ Just evd
+      readIORefEAS subsRef >>= spread [] >>= writeIORefEAS subsRef
   where
     eosRef = event'sink'eos evs
     rcntRef = event'sink'recent evs
     subsRef = event'sink'subscribers evs
-
-    spread ::
-      [EventListener t] ->
-      [EventListener t] ->
-      STM [EventListener t]
-    spread subsRemain [] =
-      return $! reverse subsRemain -- keep original order
-    spread subsRemain (listener : rest) =
-      on'event listener aeq evd >>= \case
-        Nothing -> spread subsRemain rest
-        Just listener' -> spread (listener' : subsRemain) rest
-
--- | Shorthand of 'spreadEvent' in 'EIO' monad
-spreadEventEIO :: forall t. Typeable t => AtomEvq -> EventSink t -> t -> EIO ()
-spreadEventEIO !aeq !evs !evd = atomicallyEIO $ spreadEvent aeq evs evd

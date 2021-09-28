@@ -70,6 +70,7 @@ library
     Event.Analytics.DataType
     Event.Analytics.EvsArts
     Event.Analytics.EvsDtArts
+    Event.Analytics.Monad
     Event.Analytics.Source
     Event.Analytics.XCHG
 
