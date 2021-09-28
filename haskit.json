@@ -1,0 +1,7 @@
+{
+  "edh.terminal.cmdl": [
+    "eas",
+    "cabal run eas:eas",
+    "stack run eas"
+  ]
+}

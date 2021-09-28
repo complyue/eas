@@ -1,0 +1,45 @@
+{##
+ # This is the sentinel file stand in place of a host module that
+ # should have been installed by the host interpreter, which contains
+ # host procedures, classes and other artifacts defined via EHI
+ # (which is obviously written in the host language i.e. Haskell)
+ #
+ # Execution of this module file is a sign showing that wrong Edh
+ # interpreter is used to run the program.
+ #}
+if running!true # should be treated as false for proper control-flow analysis
+then error( 'Missing host module: ' ++ __name__ )
+
+# rest of the source here serves as meta documentation for aforementioned
+# host artifacts, and is meant to be leveraged by IDE tools (such as els)
+# with source code analysis capabilities, to aid the developers
+
+class dtype pass
+
+export {
+
+  {## Host Event Sink
+   #
+High performance host even sink
+   #}
+  data Sink( dtype= Double ) pass
+
+  {## Host Event Source
+   #
+High performance host event source
+   #}
+  class EventSource pass
+
+  {## Event Source specific dtype
+   #
+The dtype providing super magic methods for event source objects
+   #}
+  Double := dtype()
+
+  {## Event Source specific dtype
+   #
+The dtype providing super magic methods for event source objects
+   #}
+  YesNo := dtype()
+
+}
