@@ -2,17 +2,19 @@ module Event.Analytics.EHI
   ( installEasBatteries,
     module Event.Analytics.Source,
     module Event.Analytics.DataType,
+    module Event.Analytics.XCHG,
     module Event.Analytics.EvsDtArts,
   )
 where
 
 -- import           Debug.Trace
 
+import Control.Monad
 import Event.Analytics.DataType
 import Event.Analytics.EvsArts
 import Event.Analytics.EvsDtArts
 import Event.Analytics.Source
-import Control.Monad.Reader
+import Event.Analytics.XCHG
 import Language.Edh.MHI
 import Prelude
 
