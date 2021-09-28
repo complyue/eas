@@ -38,10 +38,10 @@ class EventSource s t where
   --
   -- Some event source can always have the latest event data lingering, some
   -- never, some per specific criteria.
-  lingering :: s t -> EAS (Maybe t)
+  lingering :: s t -> EIO (Maybe t)
 
   -- | Handle each event data as it arrives
-  perceive :: s t -> EventHandler t -> EAS ()
+  perceive :: s t -> EventHandler t -> EIO ()
 
   -- | Subscribe to the event stream through the specified event source
   --
@@ -50,7 +50,7 @@ class EventSource s t where
   --
   -- The atomic event queue can be used to schedule EIO computations as
   -- consequences or subsequences of the original event.
-  on :: s t -> (t -> EAS ()) -> EAS ()
+  on :: s t -> (t -> EAS ()) -> EIO ()
   on !evs !handler = perceive evs $ \ !evd -> do
     handler evd
     return KeepHandling
@@ -62,21 +62,21 @@ class EventSource s t where
   --
   -- The atomic event queue can be used to schedule EIO computations as
   -- consequences or subsequences of the original event.
-  once :: s t -> (t -> EAS ()) -> EAS ()
+  once :: s t -> (t -> EAS ()) -> EIO ()
   once !evs !handler = perceive evs $ \ !evd -> do
     handler evd
     return StopHandling
 
 -- ** SomeEventSource the Functor
 
-data MappedEvs s a b = (EventSource s a) => MappedEvs (s a) (a -> EAS b)
+data MappedEvs s a b = (EventSource s a) => MappedEvs (s a) (a -> EIO b)
 
 instance (EventSource s a) => EventSource (MappedEvs s a) b where
   lingering (MappedEvs sa f) =
     lingering sa >>= \case
       Nothing -> return Nothing
       Just a -> Just <$> f a
-  perceive (MappedEvs sa f) handler = perceive sa $ handler <=< f
+  perceive (MappedEvs sa f) handler = perceive sa $ handler <=< easDoEIO . f
 
 -- | Polymorphic event source value wrapper
 data SomeEventSource t = forall s. (EventSource s t) => SomeEventSource (s t)
@@ -167,7 +167,7 @@ newtype EventListener t = EventListener
   {on'event :: t -> EAS (Maybe (EventListener t))}
 
 -- | Subscribe an event handler to the event sink
-handleEvents :: forall t. Typeable t => EventSink t -> EventHandler t -> EAS ()
+handleEvents :: forall t. Typeable t => EventSink t -> EventHandler t -> EIO ()
 handleEvents !evs !handler =
   liftIO $
     readIORef eosRef >>= \case
@@ -277,7 +277,7 @@ instance Eq (EventSink a) where
   (==) = isSameEventSink
 
 instance (Typeable t) => EventSource EventSink t where
-  lingering = readIORefEAS . event'sink'recent
+  lingering = readIORefEIO . event'sink'recent
   perceive = handleEvents
 
 -- * Event Propagation
