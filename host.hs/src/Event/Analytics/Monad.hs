@@ -39,13 +39,18 @@ newtype EAS a = EAS
       IO ()
   }
 
+instance MonadEdh EAS where
+  liftEdh = easDoEIO . liftEdh
+
+  edhThreadState = EAS $ \_efq ets _naExit exit -> exit ets
+
+  throwEdhM' tag msg details = easDoEIO $ throwEdhM' tag msg details
+
+  liftSTM = liftIO . atomically
+
 easDoEIO :: forall a. EIO a -> EAS a
 easDoEIO act = EAS $ \_efq ets _naExit exit -> runEIO act ets exit
 {-# INLINE easDoEIO #-}
-
-easDoEdh :: forall a. Edh a -> EAS a
-easDoEdh = easDoEIO . liftEdh
-{-# INLINE easDoEdh #-}
 
 easNA :: forall a. ErrMessage -> EAS a
 easNA msg = EAS $ \_efq ets naExit _exit -> naExit [(msg, getEdhErrCtx 0 ets)]
@@ -118,7 +123,7 @@ subseqDo act = EAS $ \(EFQ _ !subseqs) _ets _naExit exit -> do
 
 driveEventFrame :: EAS ()
 driveEventFrame = do
-  EFQ !conseqs !subseqs <- easQueue 
+  EFQ !conseqs !subseqs <- easQueue
   -- realize all consequences
   drain conseqs
   -- realize all subsequences
@@ -234,20 +239,6 @@ newUniqueEAS = liftIO newUnique
 {-# INLINE newUniqueEAS #-}
 
 -- ** Exceptions with EAS
-
--- | Throw a tagged exception with specified error message from an 'EAS' action
-throwEAS :: EdhErrorTag -> ErrMessage -> EAS a
-throwEAS tag msg = throwEAS' tag msg []
-{-# INLINE throwEAS #-}
-
--- | Throw a tagged exception with specified error message, and details, from
--- an 'EAS' action
-throwEAS' :: EdhErrorTag -> ErrMessage -> [(AttrKey, EdhValue)] -> EAS a
-throwEAS' tag msg details =
-  EAS $ \_efq ets _naExit exit -> runEIO doThrow ets exit
-  where
-    doThrow = throwEIO' tag msg details
-{-# INLINE throwEAS' #-}
 
 -- | Throw a general exception from an 'EAS' action
 throwHostEAS :: Exception e => e -> EAS a
