@@ -121,22 +121,45 @@ subseqDo act = EAS $ \(EFQ _ !subseqs) _ets _naExit exit -> do
   exit ()
 {-# INLINE subseqDo #-}
 
+-- Usually called by a simulation driver, to drain the event frame queue, and
+-- so as to realize all consequences/subsequences of all events spread during
+-- last frame iteration, including those events spread by the simulation
+-- driver.
+--
+-- Consequent actions will see all event sinks so updated (including but not
+-- limited to, lingering recent event data), by events spread in last iteration
+-- of the same frame.
+--
+-- Subsequent actions will see all effects applied by consequent actions,
+-- new events spread in subsequent actions will trigger listeners/handlers
+-- immediately, so new consequeces/subsequences of them will be applied in
+-- the next iteration, although also in current event frame.
+--
+-- An event frame is only done when no new events are spread in the last
+-- iteration, then this function will return, giving control back to the
+-- simulation driver.
 driveEventFrame :: EAS ()
 driveEventFrame = do
   EFQ !conseqs !subseqs <- easQueue
-  -- realize all consequences
-  drain conseqs
-  -- realize all subsequences
-  drain subseqs
+  let driveFrame =
+        drain conseqs >>= \case
+          True -> return () -- empty queue, frame done
+          False -> do
+            void $ drain subseqs
+            -- subsequent actions may spread more events, check that by
+            -- attempting yet another iteration
+            driveFrame
+  driveFrame
   where
-    drain :: IORef [EAS ()] -> EAS ()
+    drain :: IORef [EAS ()] -> EAS Bool
     drain q =
       readIORefEAS q >>= \case
-        [] -> return ()
+        [] -> return True
         acts -> do
           writeIORefEAS q []
           propagate acts
-          drain q
+          void $ drain q
+          return False
     propagate :: [EAS ()] -> EAS ()
     propagate [] = return ()
     propagate (act : rest) = do

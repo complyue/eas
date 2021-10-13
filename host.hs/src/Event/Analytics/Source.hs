@@ -282,17 +282,12 @@ instance (Typeable t) => EventSource EventSink t where
 
 -- * Event Propagation
 
--- | Spread one event data into the specified sink, as within current event
--- frame
+-- | Spread one event data into the specified sink, as into current event frame
 --
--- Consequent actions will see all event sinks so updated (including but not
--- limited to, lingering recent event data), by events spread previously in
--- the same frame.
---
--- Subsequent actions will see all effects applied by consequent actions, and
--- events spread in subsequent actions have no similar ordering guarantees,
--- except they'll all be visible to event listeners/handlers,
--- consequent/subsequent actions, ever since the next event frame.
+-- This can be called anytime from anywhere, event listeners/handlers are
+-- triggered immediately, but consequences/subsequences of the spread event,
+-- as spat from associated listeners/handlers, will only get realized during
+-- 'driveEventFrame' called by simulation driver.
 spreadEvent :: forall t. Typeable t => EventSink t -> t -> EAS ()
 spreadEvent !evs !evd = do
   let spread ::
