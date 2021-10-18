@@ -14,9 +14,22 @@ then error( 'Missing host module: ' ++ __name__ )
 # host artifacts, and is meant to be leveraged by IDE tools (such as els)
 # with source code analysis capabilities, to aid the developers
 
-class dtype pass
-
 export {
+
+  {## Event specific dtype
+   #
+Such a dtype provides super magic methods for event source objects
+   #}
+  class EvtDtype pass
+
+  {## float64 dtype for events
+   #}
+  Double = EvtDtype()
+
+  {## yesno dtype for events
+   #}
+  YesNo = EvtDtype()
+
 
   {## Host Event Sink
    #
@@ -29,17 +42,5 @@ High performance host even sink
 High performance host event source
    #}
   class EventSource pass
-
-  {## Event Source specific dtype
-   #
-The dtype providing super magic methods for event source objects
-   #}
-  Double := dtype()
-
-  {## Event Source specific dtype
-   #
-The dtype providing super magic methods for event source objects
-   #}
-  YesNo := dtype()
 
 }
