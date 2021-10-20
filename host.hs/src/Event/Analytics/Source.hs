@@ -253,9 +253,17 @@ asEventSink o withEvs = case dynamicHostData o of
 newEventSinkEdh :: forall t. Edh (EventSink t)
 newEventSinkEdh = liftIO newEventSinkIO
 
+-- | Create a new event sink with specified data lingering
+newEventSinkEdh' :: forall t. t -> Edh (EventSink t)
+newEventSinkEdh' = liftIO . newEventSinkIO'
+
 -- | Create a new event sink
 newEventSinkEIO :: forall t. EIO (EventSink t)
 newEventSinkEIO = liftIO newEventSinkIO
+
+-- | Create a new event sink with specified data lingering
+newEventSinkEIO' :: forall t. t -> EIO (EventSink t)
+newEventSinkEIO' = liftIO . newEventSinkIO'
 
 -- | Create a new event sink
 newEventSinkIO :: forall t. IO (EventSink t)
@@ -265,9 +273,21 @@ newEventSinkIO = do
   !subsRef <- newIORef []
   return $ EventSink subsRef rcntRef eosRef
 
+-- | Create a new event sink with specified data lingering
+newEventSinkIO' :: forall t. t -> IO (EventSink t)
+newEventSinkIO' d = do
+  !eosRef <- newIORef False
+  !rcntRef <- newIORef $ Just d
+  !subsRef <- newIORef []
+  return $ EventSink subsRef rcntRef eosRef
+
 -- | Create a new event sink
 newEventSink :: forall t. EAS (EventSink t)
 newEventSink = easDoEIO newEventSinkEIO
+
+-- | Create a new event sink with specified data lingering
+newEventSink' :: forall t. t -> EAS (EventSink t)
+newEventSink' = easDoEIO . newEventSinkEIO'
 
 isSameEventSink :: forall a b. EventSink a -> EventSink b -> Bool
 isSameEventSink a b = event'sink'eos a == event'sink'eos b
