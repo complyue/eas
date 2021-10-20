@@ -9,6 +9,7 @@ import Control.Exception
 import Control.Monad.State.Strict
 import Data.IORef
 import Data.Maybe
+import qualified Data.Text as T
 import Data.Unique
 import Language.Edh.MHI
 import Prelude
@@ -88,6 +89,10 @@ instance Monad EAS where
   m >>= k = EAS $ \efq ets naExit exit ->
     unEAS m efq ets naExit $ \a -> unEAS (k a) efq ets naExit exit
   {-# INLINE (>>=) #-}
+
+instance MonadFail EAS where
+  fail reason = easNA $ T.pack reason
+  {-# INLINE fail #-}
 
 instance Alternative EAS where
   empty = EAS $ \_efq _ets naExit _exit -> naExit []
