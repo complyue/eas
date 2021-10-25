@@ -212,6 +212,11 @@ swapTVarEAS ref a = atomicallyEAS $ swapTVar ref a
 {-# INLINE swapTVarEAS #-}
 
 -- | The 'IO' action lifted into 'EAS' monad
+newEmptyTMVarEAS :: forall a. EAS (TMVar a)
+newEmptyTMVarEAS = liftIO newEmptyTMVarIO
+{-# INLINE newEmptyTMVarEAS #-}
+
+-- | The 'IO' action lifted into 'EAS' monad
 newTMVarEAS :: forall a. a -> EAS (TMVar a)
 newTMVarEAS = liftIO . newTMVarIO
 {-# INLINE newTMVarEAS #-}
