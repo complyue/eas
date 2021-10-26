@@ -23,7 +23,7 @@ import Prelude
 installEasBatteries :: EdhWorld -> IO ()
 installEasBatteries !world = do
   void $
-    installEdhModuleM world "eas/RT" $ do
+    installModuleM world "eas/RT" $ do
       !moduScope <- contextScope . edh'context <$> edhThreadState
 
       !evsArts <- defineEvsArts
