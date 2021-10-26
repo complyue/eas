@@ -11,7 +11,7 @@ import Data.Dynamic
 import Data.Maybe
 import qualified Data.Text as T
 import Data.Unique
-import Language.Edh.MHI
+import Language.Edh.EHI
 import Type.Reflection
 import Prelude
 

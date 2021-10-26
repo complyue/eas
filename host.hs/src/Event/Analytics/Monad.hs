@@ -11,7 +11,7 @@ import Data.IORef
 import Data.Maybe
 import qualified Data.Text as T
 import Data.Unique
-import Language.Edh.MHI
+import Language.Edh.EHI
 import Prelude
 
 -- * Monadic Event Analytics & Simulation Interface

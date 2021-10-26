@@ -3,7 +3,7 @@ module Main where
 -- import           Debug.Trace
 
 import Event.Analytics.EHI
-import Language.Edh.MHI
+import Language.Edh.EHI
 import Language.Edh.Repl
 import System.Environment (getArgs)
 import System.Exit (exitFailure)

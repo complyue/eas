@@ -14,7 +14,7 @@ import Data.Typeable hiding (typeRep)
 import Data.Unique
 import Foreign hiding (void)
 import GHC.Float
-import Language.Edh.MHI
+import Language.Edh.EHI
 import System.Random
 import Type.Reflection
 import Prelude

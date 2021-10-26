@@ -17,7 +17,7 @@ import Event.Analytics.EvsDtArts
 import Event.Analytics.Monad
 import Event.Analytics.Source
 import Event.Analytics.XCHG
-import Language.Edh.MHI
+import Language.Edh.EHI
 import Prelude
 
 installEasBatteries :: EdhWorld -> IO ()

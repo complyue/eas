@@ -10,7 +10,7 @@ import Data.Maybe
 import Data.Typeable hiding (TypeRep, typeOf, typeRep)
 import Event.Analytics.XCHG
 import Foreign
-import Language.Edh.MHI
+import Language.Edh.EHI
 import System.Random
 import Type.Reflection
 import Prelude

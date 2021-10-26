@@ -11,7 +11,7 @@ import Data.Dynamic
 import Data.IORef
 import Data.Typeable hiding (TypeRep, typeOf, typeRep)
 import Event.Analytics.Monad
-import Language.Edh.MHI
+import Language.Edh.EHI
 import Type.Reflection
 import Prelude
 
