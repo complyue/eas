@@ -10,7 +10,6 @@ where
 
 -- import           Debug.Trace
 
-import Control.Monad
 import Event.Analytics.DataType
 import Event.Analytics.EvsArts
 import Event.Analytics.EvsDtArts
@@ -22,13 +21,5 @@ import Prelude
 
 installEasBatteries :: EdhWorld -> IO ()
 installEasBatteries !world = do
-  void $
-    installModuleM world "eas/RT" $ do
-      !moduScope <- contextScope . edh'context <$> edhThreadState
-
-      !evsArts <- defineEvsArts
-
-      let !moduArts = evsArts
-      iopdUpdateEdh moduArts $ edh'scope'entity moduScope
-      prepareExpStoreM (edh'scope'this moduScope) >>= \ !esExps ->
-        iopdUpdateEdh moduArts esExps
+  installModuleM_ world "eas/RT" $ do
+    defineEvsArts

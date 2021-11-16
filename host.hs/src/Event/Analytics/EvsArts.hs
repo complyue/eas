@@ -3,48 +3,32 @@ module Event.Analytics.EvsArts where
 -- import           Debug.Trace
 
 import Control.Applicative
-import Event.Analytics.DataType
-import Event.Analytics.EvsDtArts
-import Event.Analytics.Source
 import Control.Monad
 import Data.Dynamic
 import Data.Maybe
 import qualified Data.Text as T
 import Data.Unique
+import Event.Analytics.DataType
+import Event.Analytics.EvsDtArts
+import Event.Analytics.Source
 import Language.Edh.EHI
 import Type.Reflection
 import Prelude
 
-defineEvsArts :: Edh [(AttrKey, EdhValue)]
-defineEvsArts = do
-  clsEventSource <- createEventSourceClass
+defineEvsArts :: Edh ()
+defineEvsArts = exportM_ $ do
+  clsEventSource <- defEventSourceClass
 
-  dtYesNo <- mkYesNoEvtDt clsEventSource "YesNo"
-  dtDouble <- mkFloatEvtDt @Double clsEventSource dtYesNo "Double"
+  dtYesNo <- defYesNoEvtDt clsEventSource "YesNo"
+  dtDouble <- defFloatEvtDt @Double clsEventSource dtYesNo "Double"
 
-  clsSink <- createSinkClass dtDouble
-  return
-    [ (AttrByName "Sink", EdhObject clsSink),
-      (AttrByName "EventSource", EdhObject clsEventSource),
-      (AttrByName "Double", EdhObject dtDouble),
-      (AttrByName "YesNo", EdhObject dtYesNo)
-    ]
+  defSinkClass dtDouble
 
-createEventSourceClass :: Edh Object
-createEventSourceClass =
-  mkEdhClass "EventSource" (allocObjM evtAllocator) [] $ do
-    mthRepr <- mkEdhProc' EdhMethod "__repr__" evtReprProc
-    let mths =
-          [ (AttrByName "__repr__", mthRepr)
-          ]
-    props <-
-      sequence
-        [ (AttrByName nm,) <$> mkEdhProperty nm getter setter
-          | (nm, getter, setter) <- [("dtype", evsDtypeProc, Nothing)]
-        ]
-    let clsArts = mths ++ props
-    !clsScope <- contextScope . edh'context <$> edhThreadState
-    iopdUpdateEdh clsArts $ edh'scope'entity clsScope
+defEventSourceClass :: Edh Object
+defEventSourceClass =
+  defEdhClass "EventSource" (allocObjM evtAllocator) [] $ do
+    defEdhProc'_ EdhMethod "__repr__" evtReprProc
+    defEdhProperty_ "dtype" evsDtypeProc Nothing
   where
     evtAllocator :: ArgsPack -> Edh (Maybe Unique, ObjectStore)
     evtAllocator _ =
@@ -66,25 +50,13 @@ withThisEventSource withEvs = do
   (<|> throwEdhM EvalError "this is not an EventSource") $
     asEventSource this $ withEvs this
 
-createSinkClass :: Object -> Edh Object
-createSinkClass !defaultDt =
-  mkEdhClass "Sink" (allocObjM evsAllocator) [] $ do
-    mthInit <- mkEdhProc' EdhMethod "__init__" evs__init__
-    mthRepr <- mkEdhProc' EdhMethod "__repr__" evsReprProc
-    mthShow <- mkEdhProc' EdhMethod "__show__" evsShowProc
-    let mths =
-          [ (AttrByName "__init__", mthInit),
-            (AttrByName "__repr__", mthRepr),
-            (AttrByName "__show__", mthShow)
-          ]
-    props <-
-      sequence
-        [ (AttrByName nm,) <$> mkEdhProperty nm getter setter
-          | (nm, getter, setter) <- [("dtype", evsDtypeProc, Nothing)]
-        ]
-    let clsArts = mths ++ props
-    !clsScope <- contextScope . edh'context <$> edhThreadState
-    iopdUpdateEdh clsArts $ edh'scope'entity clsScope
+defSinkClass :: Object -> Edh Object
+defSinkClass !defaultDt =
+  defEdhClass "Sink" (allocObjM evsAllocator) [] $ do
+    defEdhProc'_ EdhMethod "__init__" evs__init__
+    defEdhProc'_ EdhMethod "__repr__" evsReprProc
+    defEdhProc'_ EdhMethod "__show__" evsShowProc
+    defEdhProperty_ "dtype" evsDtypeProc Nothing
   where
     evsAllocator ::
       "dtype" ?: Object ->

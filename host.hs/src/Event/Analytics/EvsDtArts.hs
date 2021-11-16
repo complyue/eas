@@ -3,15 +3,15 @@ module Event.Analytics.EvsDtArts where
 -- import           Debug.Trace
 
 import Control.Applicative
-import Event.Analytics.DataType
-import Event.Analytics.Source
-import Event.Analytics.XCHG
 import Control.Monad
 import Data.Dynamic
 import Data.Maybe
 import qualified Data.Text as T
 import Data.Typeable hiding (typeRep)
 import Data.Unique
+import Event.Analytics.DataType
+import Event.Analytics.Source
+import Event.Analytics.XCHG
 import Foreign hiding (void)
 import GHC.Float
 import Language.Edh.EHI
@@ -90,52 +90,36 @@ defineEvtFieldProperty fg dto nm = do
               <> " vs "
               <> show (typeRep @a)
 
-mkYesNoEvtDt :: Object -> DataTypeIdent -> Edh Object
-mkYesNoEvtDt clsEvs !dti = do
-  !dtCls <- mkEdhClass dti (allocObjM dtypeAllocator) [] $ pure ()
+defYesNoEvtDt :: Object -> DataTypeIdent -> Edh Object
+defYesNoEvtDt clsEvs !dti = do
+  dtCls <- mkEdhClass dti (allocObjM dtypeAllocator) [] $ do
+    defEdhProc'_ EdhMethod "(&&)" $ evsOpProc @YesNo clsEvs (.&.)
+    defEdhProc'_ EdhMethod "(&&.)" $ evsOpProc @YesNo clsEvs (.&.)
+    defEdhProc'_ EdhMethod "(||)" $ evsOpProc @YesNo clsEvs (.|.)
+    defEdhProc'_ EdhMethod "(||.)" $ evsOpProc @YesNo clsEvs (.|.)
+
+    defEdhProc'_ EdhMethod "__eq__" evsDtypeEqProc
+    defEdhArt "__repr__" $ EdhString dti
   !idObj <- newUniqueEdh
   !supersVar <- newTVarEdh []
-  let !dtYesNo =
+  let dtYesNo =
         Object
           { edh'obj'ident = idObj,
             edh'obj'store = dtd,
             edh'obj'class = dtCls,
             edh'obj'supers = supersVar
           }
-  !clsMths <-
-    sequence $
-      [ (AttrByName nm,) <$> mkEdhProc vc nm hp
-        | (nm, vc, hp) <-
-            [ ( "(==)",
-                EdhMethod,
-                wrapEdhProc $
-                  evsCmpProc clsEvs dtYesNo ((==) :: YesNo -> YesNo -> Bool)
-              ),
-              ( "(==.)",
-                EdhMethod,
-                wrapEdhProc $
-                  evsCmpProc clsEvs dtYesNo ((==) :: YesNo -> YesNo -> Bool)
-              ),
-              ( "(!=)",
-                EdhMethod,
-                wrapEdhProc $
-                  evsCmpProc clsEvs dtYesNo ((/=) :: YesNo -> YesNo -> Bool)
-              ),
-              ( "(!=.)",
-                EdhMethod,
-                wrapEdhProc $
-                  evsCmpProc clsEvs dtYesNo ((/=) :: YesNo -> YesNo -> Bool)
-              ),
-              ("(&&)", EdhMethod, wrapEdhProc $ evsOpProc @YesNo clsEvs (.&.)),
-              ("(&&.)", EdhMethod, wrapEdhProc $ evsOpProc @YesNo clsEvs (.&.)),
-              ("(||)", EdhMethod, wrapEdhProc $ evsOpProc @YesNo clsEvs (.|.)),
-              ("(||.)", EdhMethod, wrapEdhProc $ evsOpProc @YesNo clsEvs (.|.)),
-              ("__eq__", EdhMethod, wrapEdhProc evsDtypeEqProc)
-            ]
-      ]
-  let !clsArts = clsMths ++ [(AttrByName "__repr__", EdhString dti)]
-  !clsScope <- inlineSTM $ objectScope dtCls
-  iopdUpdateEdh clsArts $ edh'scope'entity clsScope
+  clsScope <- inlineSTM $ objectScope dtCls
+  pushStackM' clsScope $ do
+    defEdhProc'_ EdhMethod "(==)" $
+      evsCmpProc clsEvs dtYesNo ((==) :: YesNo -> YesNo -> Bool)
+    defEdhProc'_ EdhMethod "(==.)" $
+      evsCmpProc clsEvs dtYesNo ((==) :: YesNo -> YesNo -> Bool)
+    defEdhProc'_ EdhMethod "(!=)" $
+      evsCmpProc clsEvs dtYesNo ((/=) :: YesNo -> YesNo -> Bool)
+    defEdhProc'_ EdhMethod "(!=.)" $
+      evsCmpProc clsEvs dtYesNo ((/=) :: YesNo -> YesNo -> Bool)
+  defEdhArt dti $ EdhObject dtYesNo
   return dtYesNo
   where
     !dtd = HostStore $ toDyn dt
@@ -145,125 +129,47 @@ mkYesNoEvtDt clsEvs !dti = do
     dtypeAllocator :: Edh (Maybe Unique, ObjectStore)
     dtypeAllocator = return (Nothing, dtd)
 
-mkFloatEvtDt ::
+defFloatEvtDt ::
   forall a.
   Object ->
   (RealFloat a, Random a, Num a, Storable a, EdhXchg a, Typeable a) =>
   Object ->
   DataTypeIdent ->
   Edh Object
-mkFloatEvtDt clsEvs !dtYesNo !dti = do
+defFloatEvtDt clsEvs !dtYesNo !dti = do
   !dtCls <- mkEdhClass dti (allocObjM dtypeAllocator) [] $ do
-    !clsMths <-
-      sequence $
-        [ (AttrByName nm,) <$> mkEdhProc vc nm hp
-          | (nm, vc, hp) <-
-              [ ( "(==)",
-                  EdhMethod,
-                  wrapEdhProc $ evsCmpProc @a clsEvs dtYesNo (==)
-                ),
-                ( "(==.)",
-                  EdhMethod,
-                  wrapEdhProc $ evsCmpProc @a clsEvs dtYesNo (==)
-                ),
-                ( "(!=)",
-                  EdhMethod,
-                  wrapEdhProc $ evsCmpProc @a clsEvs dtYesNo (/=)
-                ),
-                ( "(!=.)",
-                  EdhMethod,
-                  wrapEdhProc $ evsCmpProc @a clsEvs dtYesNo (/=)
-                ),
-                ( "(>=)",
-                  EdhMethod,
-                  wrapEdhProc $ evsCmpProc @a clsEvs dtYesNo (>=)
-                ),
-                ( "(>=.)",
-                  EdhMethod,
-                  wrapEdhProc $ evsCmpProc @a clsEvs dtYesNo (<=)
-                ),
-                ( "(<=)",
-                  EdhMethod,
-                  wrapEdhProc $ evsCmpProc @a clsEvs dtYesNo (<=)
-                ),
-                ( "(<=.)",
-                  EdhMethod,
-                  wrapEdhProc $ evsCmpProc @a clsEvs dtYesNo (>=)
-                ),
-                ( "(>)",
-                  EdhMethod,
-                  wrapEdhProc $ evsCmpProc @a clsEvs dtYesNo (>)
-                ),
-                ( "(>.)",
-                  EdhMethod,
-                  wrapEdhProc $ evsCmpProc @a clsEvs dtYesNo (<)
-                ),
-                ( "(<)",
-                  EdhMethod,
-                  wrapEdhProc $ evsCmpProc @a clsEvs dtYesNo (<)
-                ),
-                ( "(<.)",
-                  EdhMethod,
-                  wrapEdhProc $ evsCmpProc @a clsEvs dtYesNo (>)
-                ),
-                ( "(+)",
-                  EdhMethod,
-                  wrapEdhProc $ evsOpProc @a clsEvs (+)
-                ),
-                ( "(+.)",
-                  EdhMethod,
-                  wrapEdhProc $ evsOpProc @a clsEvs (+)
-                ),
-                ( "(-)",
-                  EdhMethod,
-                  wrapEdhProc $ evsOpProc @a clsEvs (-)
-                ),
-                ( "(-.)",
-                  EdhMethod,
-                  wrapEdhProc $ evsOpProc @a clsEvs (flip (-))
-                ),
-                ( "(*)",
-                  EdhMethod,
-                  wrapEdhProc $ evsOpProc @a clsEvs (*)
-                ),
-                ( "(*.)",
-                  EdhMethod,
-                  wrapEdhProc $ evsOpProc @a clsEvs (*)
-                ),
-                ( "(/)",
-                  EdhMethod,
-                  wrapEdhProc $ evsOpProc @a clsEvs (/)
-                ),
-                ( "(/.)",
-                  EdhMethod,
-                  wrapEdhProc $ evsOpProc @a clsEvs (flip (/))
-                ),
-                -- TODO reason about this:
-                -- https://stackoverflow.com/questions/38588815/rounding-errors-in-python-floor-division
-                ( "(//)",
-                  EdhMethod,
-                  wrapEdhProc $
-                    evsOpProc @a clsEvs (\ !x !y -> fromInteger $ floor $ x / y)
-                ),
-                ( "(//.)",
-                  EdhMethod,
-                  wrapEdhProc $
-                    evsOpProc @a clsEvs (\ !x !y -> fromInteger $ floor $ y / x)
-                ),
-                ( "(**)",
-                  EdhMethod,
-                  wrapEdhProc $ evsOpProc @a clsEvs (**)
-                ),
-                ( "(**.)",
-                  EdhMethod,
-                  wrapEdhProc $ evsOpProc @a clsEvs (flip (**))
-                ),
-                ("__eq__", EdhMethod, wrapEdhProc evsDtypeEqProc)
-              ]
-        ]
-    let !clsArts = clsMths ++ [(AttrByName "__repr__", EdhString dti)]
-    !clsScope <- contextScope . edh'context <$> edhThreadState
-    iopdUpdateEdh clsArts $ edh'scope'entity clsScope
+    defEdhProc'_ EdhMethod "(==)" $ evsCmpProc @a clsEvs dtYesNo (==)
+    defEdhProc'_ EdhMethod "(==.)" $ evsCmpProc @a clsEvs dtYesNo (==)
+    defEdhProc'_ EdhMethod "(!=)" $ evsCmpProc @a clsEvs dtYesNo (/=)
+    defEdhProc'_ EdhMethod "(!=.)" $ evsCmpProc @a clsEvs dtYesNo (/=)
+    defEdhProc'_ EdhMethod "(>=)" $ evsCmpProc @a clsEvs dtYesNo (>=)
+    defEdhProc'_ EdhMethod "(>=.)" $ evsCmpProc @a clsEvs dtYesNo (<=)
+    defEdhProc'_ EdhMethod "(<=)" $ evsCmpProc @a clsEvs dtYesNo (<=)
+    defEdhProc'_ EdhMethod "(<=.)" $ evsCmpProc @a clsEvs dtYesNo (>=)
+    defEdhProc'_ EdhMethod "(>)" $ evsCmpProc @a clsEvs dtYesNo (>)
+    defEdhProc'_ EdhMethod "(>.)" $ evsCmpProc @a clsEvs dtYesNo (<)
+    defEdhProc'_ EdhMethod "(<)" $ evsCmpProc @a clsEvs dtYesNo (<)
+    defEdhProc'_ EdhMethod "(<.)" $ evsCmpProc @a clsEvs dtYesNo (>)
+    defEdhProc'_ EdhMethod "(+)" $ evsOpProc @a clsEvs (+)
+    defEdhProc'_ EdhMethod "(+.)" $ evsOpProc @a clsEvs (+)
+    defEdhProc'_ EdhMethod "(-)" $ evsOpProc @a clsEvs (-)
+    defEdhProc'_ EdhMethod "(-.)" $ evsOpProc @a clsEvs (flip (-))
+    defEdhProc'_ EdhMethod "(*)" $ evsOpProc @a clsEvs (*)
+    defEdhProc'_ EdhMethod "(*.)" $ evsOpProc @a clsEvs (*)
+    defEdhProc'_ EdhMethod "(/)" $ evsOpProc @a clsEvs (/)
+    defEdhProc'_ EdhMethod "(/.)" $ evsOpProc @a clsEvs (flip (/))
+    -- TODO reason about this:
+    -- https://stackoverflow.com/questions/38588815/rounding-errors-in-python-floor-division
+    defEdhProc'_ EdhMethod "(//)" $
+      evsOpProc @a clsEvs (\ !x !y -> fromInteger $ floor $ x / y)
+    defEdhProc'_ EdhMethod "(//.)" $
+      evsOpProc @a clsEvs (\ !x !y -> fromInteger $ floor $ y / x)
+    defEdhProc'_ EdhMethod "(**)" $ evsOpProc @a clsEvs (**)
+    defEdhProc'_ EdhMethod "(**.)" $ evsOpProc @a clsEvs (flip (**))
+
+    defEdhProc'_ EdhMethod "__eq__" evsDtypeEqProc
+    defEdhArt "__repr__" $ EdhString dti
+
   !idObj <- newUniqueEdh
   !supersVar <- newTVarEdh []
   let !dtObj =
@@ -273,6 +179,7 @@ mkFloatEvtDt clsEvs !dtYesNo !dti = do
             edh'obj'class = dtCls,
             edh'obj'supers = supersVar
           }
+  defEdhArt dti $ EdhObject dtObj
   return dtObj
   where
     !dtd = HostStore $ toDyn dt
@@ -282,137 +189,47 @@ mkFloatEvtDt clsEvs !dtYesNo !dti = do
     dtypeAllocator :: Edh (Maybe Unique, ObjectStore)
     dtypeAllocator = return (Nothing, dtd)
 
-mkIntEvtDt ::
+defIntEvtDt ::
   forall a.
   Object ->
   (Bits a, Integral a, Random a, Num a, Storable a, EdhXchg a, Typeable a) =>
   Object ->
   DataTypeIdent ->
   Edh Object
-mkIntEvtDt clsEvs !dtYesNo !dti = do
+defIntEvtDt clsEvs !dtYesNo !dti = do
   !dtCls <- mkEdhClass dti (allocObjM dtypeAllocator) [] $ do
-    !clsMths <-
-      sequence $
-        [ (AttrByName nm,) <$> mkEdhProc vc nm hp
-          | (nm, vc, hp) <-
-              [ ( "(==)",
-                  EdhMethod,
-                  wrapEdhProc $ evsCmpProc @a clsEvs dtYesNo (==)
-                ),
-                ( "(==.)",
-                  EdhMethod,
-                  wrapEdhProc $ evsCmpProc @a clsEvs dtYesNo (==)
-                ),
-                ( "(!=)",
-                  EdhMethod,
-                  wrapEdhProc $ evsCmpProc @a clsEvs dtYesNo (/=)
-                ),
-                ( "(!=.)",
-                  EdhMethod,
-                  wrapEdhProc $ evsCmpProc @a clsEvs dtYesNo (/=)
-                ),
-                ( "(>=)",
-                  EdhMethod,
-                  wrapEdhProc $ evsCmpProc @a clsEvs dtYesNo (>=)
-                ),
-                ( "(>=.)",
-                  EdhMethod,
-                  wrapEdhProc $ evsCmpProc @a clsEvs dtYesNo (<=)
-                ),
-                ( "(<=)",
-                  EdhMethod,
-                  wrapEdhProc $ evsCmpProc @a clsEvs dtYesNo (<=)
-                ),
-                ( "(<=.)",
-                  EdhMethod,
-                  wrapEdhProc $ evsCmpProc @a clsEvs dtYesNo (>=)
-                ),
-                ( "(>)",
-                  EdhMethod,
-                  wrapEdhProc $ evsCmpProc @a clsEvs dtYesNo (>)
-                ),
-                ( "(>.)",
-                  EdhMethod,
-                  wrapEdhProc $ evsCmpProc @a clsEvs dtYesNo (<)
-                ),
-                ( "(<)",
-                  EdhMethod,
-                  wrapEdhProc $ evsCmpProc @a clsEvs dtYesNo (<)
-                ),
-                ( "(<.)",
-                  EdhMethod,
-                  wrapEdhProc $ evsCmpProc @a clsEvs dtYesNo (>)
-                ),
-                ( "(+)",
-                  EdhMethod,
-                  wrapEdhProc $ evsOpProc @a clsEvs (+)
-                ),
-                ( "(+.)",
-                  EdhMethod,
-                  wrapEdhProc $ evsOpProc @a clsEvs (+)
-                ),
-                ( "(-)",
-                  EdhMethod,
-                  wrapEdhProc $ evsOpProc @a clsEvs (-)
-                ),
-                ( "(-.)",
-                  EdhMethod,
-                  wrapEdhProc $ evsOpProc @a clsEvs (flip (-))
-                ),
-                ( "(*)",
-                  EdhMethod,
-                  wrapEdhProc $ evsOpProc @a clsEvs (*)
-                ),
-                ( "(*.)",
-                  EdhMethod,
-                  wrapEdhProc $ evsOpProc @a clsEvs (*)
-                ),
-                ( "(/)",
-                  EdhMethod,
-                  wrapEdhProc $ evsOpProc @a clsEvs div
-                ),
-                ( "(/.)",
-                  EdhMethod,
-                  wrapEdhProc $ evsOpProc @a clsEvs (flip div)
-                ),
-                ( "(//)",
-                  EdhMethod,
-                  wrapEdhProc $ evsOpProc @a clsEvs div
-                ),
-                ( "(//.)",
-                  EdhMethod,
-                  wrapEdhProc $ evsOpProc @a clsEvs (flip div)
-                ),
-                ( "(**)",
-                  EdhMethod,
-                  wrapEdhProc $ evsOpProc @a clsEvs intPow
-                ),
-                ( "(**.)",
-                  EdhMethod,
-                  wrapEdhProc $ evsOpProc @a clsEvs $ flip intPow
-                ),
-                ( "(&&)",
-                  EdhMethod,
-                  wrapEdhProc $ evsOpProc @a clsEvs (.&.)
-                ),
-                ( "(&&.)",
-                  EdhMethod,
-                  wrapEdhProc $ evsOpProc @a clsEvs (.&.)
-                ),
-                ( "(||)",
-                  EdhMethod,
-                  wrapEdhProc $ evsOpProc @a clsEvs (.|.)
-                ),
-                ( "(||.)",
-                  EdhMethod,
-                  wrapEdhProc $ evsOpProc @a clsEvs (.|.)
-                ),
-                ("__eq__", EdhMethod, wrapEdhProc evsDtypeEqProc)
-              ]
-        ]
-    let !clsArts = clsMths ++ [(AttrByName "__repr__", EdhString dti)]
-    !clsScope <- contextScope . edh'context <$> edhThreadState
-    iopdUpdateEdh clsArts $ edh'scope'entity clsScope
+    defEdhProc'_ EdhMethod "(==)" $ evsCmpProc @a clsEvs dtYesNo (==)
+    defEdhProc'_ EdhMethod "(==.)" $ evsCmpProc @a clsEvs dtYesNo (==)
+    defEdhProc'_ EdhMethod "(!=)" $ evsCmpProc @a clsEvs dtYesNo (/=)
+    defEdhProc'_ EdhMethod "(!=.)" $ evsCmpProc @a clsEvs dtYesNo (/=)
+    defEdhProc'_ EdhMethod "(>=)" $ evsCmpProc @a clsEvs dtYesNo (>=)
+    defEdhProc'_ EdhMethod "(>=.)" $ evsCmpProc @a clsEvs dtYesNo (<=)
+    defEdhProc'_ EdhMethod "(<=)" $ evsCmpProc @a clsEvs dtYesNo (<=)
+    defEdhProc'_ EdhMethod "(<=.)" $ evsCmpProc @a clsEvs dtYesNo (>=)
+    defEdhProc'_ EdhMethod "(>)" $ evsCmpProc @a clsEvs dtYesNo (>)
+    defEdhProc'_ EdhMethod "(>.)" $ evsCmpProc @a clsEvs dtYesNo (<)
+    defEdhProc'_ EdhMethod "(<)" $ evsCmpProc @a clsEvs dtYesNo (<)
+    defEdhProc'_ EdhMethod "(<.)" $ evsCmpProc @a clsEvs dtYesNo (>)
+    defEdhProc'_ EdhMethod "(+)" $ evsOpProc @a clsEvs (+)
+    defEdhProc'_ EdhMethod "(+.)" $ evsOpProc @a clsEvs (+)
+    defEdhProc'_ EdhMethod "(-)" $ evsOpProc @a clsEvs (-)
+    defEdhProc'_ EdhMethod "(-.)" $ evsOpProc @a clsEvs (flip (-))
+    defEdhProc'_ EdhMethod "(*)" $ evsOpProc @a clsEvs (*)
+    defEdhProc'_ EdhMethod "(*.)" $ evsOpProc @a clsEvs (*)
+    defEdhProc'_ EdhMethod "(/)" $ evsOpProc @a clsEvs div
+    defEdhProc'_ EdhMethod "(/.)" $ evsOpProc @a clsEvs (flip div)
+    defEdhProc'_ EdhMethod "(//)" $ evsOpProc @a clsEvs (\ !x !y -> div x y)
+    defEdhProc'_ EdhMethod "(//.)" $ evsOpProc @a clsEvs (\ !x !y -> div y x)
+    defEdhProc'_ EdhMethod "(**)" $ evsOpProc @a clsEvs intPow
+    defEdhProc'_ EdhMethod "(**.)" $ evsOpProc @a clsEvs (flip intPow)
+    defEdhProc'_ EdhMethod "(&&)" $ evsOpProc @a clsEvs (.&.)
+    defEdhProc'_ EdhMethod "(&&.)" $ evsOpProc @a clsEvs (.&.)
+    defEdhProc'_ EdhMethod "(||)" $ evsOpProc @a clsEvs (.|.)
+    defEdhProc'_ EdhMethod "(||.)" $ evsOpProc @a clsEvs (.|.)
+
+    defEdhProc'_ EdhMethod "__eq__" evsDtypeEqProc
+    defEdhArt "__repr__" $ EdhString dti
+
   !idObj <- newUniqueEdh
   !supersVar <- newTVarEdh []
   let !dtObj =
@@ -422,6 +239,7 @@ mkIntEvtDt clsEvs !dtYesNo !dti = do
             edh'obj'class = dtCls,
             edh'obj'supers = supersVar
           }
+  defEdhArt dti $ EdhObject dtObj
   return dtObj
   where
     !dtd = HostStore $ toDyn dt
@@ -438,89 +256,35 @@ mkIntEvtDt clsEvs !dtYesNo !dti = do
       | y < 0 = 0 -- to survive `Exception: Negative exponent`
       | otherwise = x ^ y
 
-mkBitsEvtDt ::
+defBitsEvtDt ::
   forall a.
   Object ->
   (Bits a, Ord a, Storable a, EdhXchg a, Typeable a) =>
   Object ->
   DataTypeIdent ->
   Edh Object
-mkBitsEvtDt clsEvs !dtYesNo !dti = do
+defBitsEvtDt clsEvs !dtYesNo !dti = do
   !dtCls <- mkEdhClass dti (allocObjM dtypeAllocator) [] $ do
-    !clsMths <-
-      sequence $
-        [ (AttrByName nm,) <$> mkEdhProc vc nm hp
-          | (nm, vc, hp) <-
-              [ ( "(==)",
-                  EdhMethod,
-                  wrapEdhProc $ evsCmpProc @a clsEvs dtYesNo (==)
-                ),
-                ( "(==.)",
-                  EdhMethod,
-                  wrapEdhProc $ evsCmpProc @a clsEvs dtYesNo (==)
-                ),
-                ( "(!=)",
-                  EdhMethod,
-                  wrapEdhProc $ evsCmpProc @a clsEvs dtYesNo (/=)
-                ),
-                ( "(!=.)",
-                  EdhMethod,
-                  wrapEdhProc $ evsCmpProc @a clsEvs dtYesNo (/=)
-                ),
-                ( "(>=)",
-                  EdhMethod,
-                  wrapEdhProc $ evsCmpProc @a clsEvs dtYesNo (>=)
-                ),
-                ( "(>=.)",
-                  EdhMethod,
-                  wrapEdhProc $ evsCmpProc @a clsEvs dtYesNo (<=)
-                ),
-                ( "(<=)",
-                  EdhMethod,
-                  wrapEdhProc $ evsCmpProc @a clsEvs dtYesNo (<=)
-                ),
-                ( "(<=.)",
-                  EdhMethod,
-                  wrapEdhProc $ evsCmpProc @a clsEvs dtYesNo (>=)
-                ),
-                ( "(>)",
-                  EdhMethod,
-                  wrapEdhProc $ evsCmpProc @a clsEvs dtYesNo (>)
-                ),
-                ( "(>.)",
-                  EdhMethod,
-                  wrapEdhProc $ evsCmpProc @a clsEvs dtYesNo (<)
-                ),
-                ( "(<)",
-                  EdhMethod,
-                  wrapEdhProc $ evsCmpProc @a clsEvs dtYesNo (<)
-                ),
-                ( "(<.)",
-                  EdhMethod,
-                  wrapEdhProc $ evsCmpProc @a clsEvs dtYesNo (>)
-                ),
-                ( "(&&)",
-                  EdhMethod,
-                  wrapEdhProc $ evsOpProc @a clsEvs (.&.)
-                ),
-                ( "(&&.)",
-                  EdhMethod,
-                  wrapEdhProc $ evsOpProc @a clsEvs (.&.)
-                ),
-                ( "(||)",
-                  EdhMethod,
-                  wrapEdhProc $ evsOpProc @a clsEvs (.|.)
-                ),
-                ( "(||.)",
-                  EdhMethod,
-                  wrapEdhProc $ evsOpProc @a clsEvs (.|.)
-                ),
-                ("__eq__", EdhMethod, wrapEdhProc evsDtypeEqProc)
-              ]
-        ]
-    let !clsArts = clsMths ++ [(AttrByName "__repr__", EdhString dti)]
-    !clsScope <- contextScope . edh'context <$> edhThreadState
-    iopdUpdateEdh clsArts $ edh'scope'entity clsScope
+    defEdhProc'_ EdhMethod "(==)" $ evsCmpProc @a clsEvs dtYesNo (==)
+    defEdhProc'_ EdhMethod "(==.)" $ evsCmpProc @a clsEvs dtYesNo (==)
+    defEdhProc'_ EdhMethod "(!=)" $ evsCmpProc @a clsEvs dtYesNo (/=)
+    defEdhProc'_ EdhMethod "(!=.)" $ evsCmpProc @a clsEvs dtYesNo (/=)
+    defEdhProc'_ EdhMethod "(>=)" $ evsCmpProc @a clsEvs dtYesNo (>=)
+    defEdhProc'_ EdhMethod "(>=.)" $ evsCmpProc @a clsEvs dtYesNo (<=)
+    defEdhProc'_ EdhMethod "(<=)" $ evsCmpProc @a clsEvs dtYesNo (<=)
+    defEdhProc'_ EdhMethod "(<=.)" $ evsCmpProc @a clsEvs dtYesNo (>=)
+    defEdhProc'_ EdhMethod "(>)" $ evsCmpProc @a clsEvs dtYesNo (>)
+    defEdhProc'_ EdhMethod "(>.)" $ evsCmpProc @a clsEvs dtYesNo (<)
+    defEdhProc'_ EdhMethod "(<)" $ evsCmpProc @a clsEvs dtYesNo (<)
+    defEdhProc'_ EdhMethod "(<.)" $ evsCmpProc @a clsEvs dtYesNo (>)
+    defEdhProc'_ EdhMethod "(&&)" $ evsOpProc @a clsEvs (.&.)
+    defEdhProc'_ EdhMethod "(&&.)" $ evsOpProc @a clsEvs (.&.)
+    defEdhProc'_ EdhMethod "(||)" $ evsOpProc @a clsEvs (.|.)
+    defEdhProc'_ EdhMethod "(||.)" $ evsOpProc @a clsEvs (.|.)
+
+    defEdhProc'_ EdhMethod "__eq__" evsDtypeEqProc
+    defEdhArt "__repr__" $ EdhString dti
+
   !idObj <- newUniqueEdh
   !supersVar <- newTVarEdh []
   let !dtObj =
@@ -530,6 +294,7 @@ mkBitsEvtDt clsEvs !dtYesNo !dti = do
             edh'obj'class = dtCls,
             edh'obj'supers = supersVar
           }
+  defEdhArt dti $ EdhObject dtObj
   return dtObj
   where
     !dtd = HostStore $ toDyn dt
@@ -539,18 +304,15 @@ mkBitsEvtDt clsEvs !dtYesNo !dti = do
     dtypeAllocator :: Edh (Maybe Unique, ObjectStore)
     dtypeAllocator = return (Nothing, dtd)
 
-mkEvsDataType ::
+defEvsDataType ::
   forall a.
   (Typeable a) =>
   DataTypeIdent ->
   Edh () ->
   Edh Object
-mkEvsDataType !dti !clsInit = do
+defEvsDataType !dti !clsInit = do
   !dtCls <- mkEdhClass dti (allocObjM dtypeAllocator) [] $ do
-    let !clsArts = [(AttrByName "__repr__", EdhString dti)]
-    !clsScope <- contextScope . edh'context <$> edhThreadState
-    iopdUpdateEdh clsArts $ edh'scope'entity clsScope
-
+    defEdhArt "__repr__" $ EdhString dti
     clsInit
   !idObj <- newUniqueEdh
   !supersVar <- newTVarEdh []
@@ -561,6 +323,7 @@ mkEvsDataType !dti !clsInit = do
             edh'obj'class = dtCls,
             edh'obj'supers = supersVar
           }
+  defEdhArt dti $ EdhObject dtObj
   return dtObj
   where
     !dtd = HostStore $ toDyn dt
