@@ -110,7 +110,7 @@ defYesNoEvtDt clsEvs !dti = do
             edh'obj'supers = supersVar
           }
   clsScope <- inlineSTM $ objectScope dtCls
-  pushStackM' clsScope $ do
+  runNestedIn clsScope $ do
     defEdhProc'_ EdhMethod "(==)" $
       evsCmpProc clsEvs dtYesNo ((==) :: YesNo -> YesNo -> Bool)
     defEdhProc'_ EdhMethod "(==.)" $
