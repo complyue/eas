@@ -20,6 +20,6 @@ import Language.Edh.EHI
 import Prelude
 
 installEasBatteries :: EdhWorld -> IO ()
-installEasBatteries !world = do
-  installModuleM_ world "eas/RT" $ do
+installEasBatteries !world = runProgramM_ world $ do
+  installModuleM_ "eas/RT" $ do
     defineEvsArts
