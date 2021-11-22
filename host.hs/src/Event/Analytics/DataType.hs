@@ -5,6 +5,7 @@ module Event.Analytics.DataType where
 
 import Control.Monad
 import Data.Dynamic
+import Data.Hashable
 import Data.Lossless.Decimal as D
 import Data.Maybe
 import Data.Typeable hiding (TypeRep, typeOf, typeRep)
@@ -43,6 +44,9 @@ data DeviceDataType a = (Eq a, Storable a, EdhXchg a, Typeable a) =>
 instance Eq (DeviceDataType a) where
   x == y = device'data'type'ident x == device'data'type'ident y
 
+instance Hashable (DeviceDataType a) where
+  hashWithSalt s dt = s `hashWithSalt` device'data'type'ident dt
+
 -- | Lifted Haskell types directly operatable by the host language
 data DirectDataType a = (Eq a, EdhXchg a, Typeable a) =>
   DirectDataType
@@ -68,6 +72,9 @@ data DirectDataType a = (Eq a, EdhXchg a, Typeable a) =>
 instance Eq (DirectDataType a) where
   x == y = direct'data'type'ident x == direct'data'type'ident y
 
+instance Hashable (DirectDataType a) where
+  hashWithSalt s dt = s `hashWithSalt` direct'data'type'ident dt
+
 type DataTypeIdent = AttrName
 
 -- | A data type conveys the representation as well as its relevant type class
@@ -88,6 +95,11 @@ data'type'ident (DummyDt dti) = dti
 
 instance Eq (DataType a) where
   x == y = data'type'ident x == data'type'ident y
+
+instance Hashable (DataType a) where
+  hashWithSalt s (DeviceDt dt) = s `hashWithSalt` dt
+  hashWithSalt s (DirectDt dt) = s `hashWithSalt` dt
+  hashWithSalt s (DummyDt dti) = s `hashWithSalt` dti
 
 -- | Heterogeneous data type comparison
 --
@@ -201,7 +213,7 @@ withDataType ::
   (forall a. (Typeable a) => DataType a -> m r) ->
   m r
 withDataType !dto !withDto = case edh'obj'store dto of
-  HostStore (Dynamic trGDT monoDataType) -> case trGDT of
+  HostStore (HostValue trGDT monoDataType) -> case trGDT of
     App trDataType trA -> withTypeable trA $
       case trDataType `eqTypeRep` typeRep @DataType of
         Just HRefl -> withDto monoDataType

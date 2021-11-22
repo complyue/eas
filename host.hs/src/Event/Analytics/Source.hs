@@ -131,7 +131,7 @@ asEventSource ::
   Object ->
   (forall s t. (EventSource s t, Typeable t) => s t -> Edh r) ->
   Edh r
-asEventSource o withEvs = case dynamicHostData o of
+asEventSource o withEvs = case objDynamicValue o of
   Nothing -> mzero
   Just (Dynamic tr evs) -> case tr `eqTypeRep` typeRep @SomeEventSink of
     Just HRefl -> case evs of
@@ -152,12 +152,14 @@ asEventSource o withEvs = case dynamicHostData o of
 -- | An event sink conveys an event stream, with possibly multiple event
 -- producers and / or multiple event consumers
 data EventSink t = EventSink
-  { -- | Subscribed event listeners to this sink
-    event'sink'subscribers :: IORef [EventListener t],
+  { -- | Identity of this sink
+    event'sink'ident :: !RUID,
+    -- | Subscribed event listeners to this sink
+    event'sink'subscribers :: !(IORef [EventListener t]),
     -- | The most recent event data lingering in this sink
-    event'sink'recent :: IORef (Maybe t),
+    event'sink'recent :: !(IORef (Maybe t)),
     -- | Whether this sink is at end-of-stream
-    event'sink'eos :: IORef EndOfStream
+    event'sink'eos :: !(IORef EndOfStream)
   }
 
 -- | An event listener reacts to a particular event
@@ -236,7 +238,7 @@ asEventSink ::
   Object ->
   (forall t. (Typeable t) => EventSink t -> Edh r) ->
   Edh r
-asEventSink o withEvs = case dynamicHostData o of
+asEventSink o withEvs = case objDynamicValue o of
   Nothing -> mzero
   Just (Dynamic tr evs) -> case tr `eqTypeRep` typeRep @SomeEventSink of
     Just HRefl -> case evs of
@@ -268,18 +270,20 @@ newEventSinkEIO' = liftIO . newEventSinkIO'
 -- | Create a new event sink
 newEventSinkIO :: forall t. IO (EventSink t)
 newEventSinkIO = do
+  !u <- newRUID
   !eosRef <- newIORef False
   !rcntRef <- newIORef Nothing
   !subsRef <- newIORef []
-  return $ EventSink subsRef rcntRef eosRef
+  return $ EventSink u subsRef rcntRef eosRef
 
 -- | Create a new event sink with specified data lingering
 newEventSinkIO' :: forall t. t -> IO (EventSink t)
 newEventSinkIO' d = do
+  !u <- newRUID
   !eosRef <- newIORef False
   !rcntRef <- newIORef $ Just d
   !subsRef <- newIORef []
-  return $ EventSink subsRef rcntRef eosRef
+  return $ EventSink u subsRef rcntRef eosRef
 
 -- | Create a new event sink
 newEventSink :: forall t. EAS (EventSink t)
@@ -290,11 +294,14 @@ newEventSink' :: forall t. t -> EAS (EventSink t)
 newEventSink' = easDoEIO . newEventSinkEIO'
 
 isSameEventSink :: forall a b. EventSink a -> EventSink b -> Bool
-isSameEventSink a b = event'sink'eos a == event'sink'eos b
+isSameEventSink a b = event'sink'ident a == event'sink'ident b
 
 -- | Note identity of event sinks won't change after fmap'ped
 instance Eq (EventSink a) where
   (==) = isSameEventSink
+
+instance Hashable (EventSink a) where
+  hashWithSalt s es = s `hashWithSalt` event'sink'ident es
 
 instance (Typeable t) => EventSource EventSink t where
   lingering = readIORefEIO . event'sink'recent

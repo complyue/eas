@@ -7,7 +7,6 @@ import Control.Monad
 import Data.Dynamic
 import Data.Maybe
 import qualified Data.Text as T
-import Data.Unique
 import Event.Analytics.DataType
 import Event.Analytics.EvsDtArts
 import Event.Analytics.Source
@@ -30,7 +29,7 @@ defEventSourceClass =
     defEdhProc'_ EdhMethod "__repr__" evtReprProc
     defEdhProperty_ "dtype" evsDtypeProc Nothing
   where
-    evtAllocator :: ArgsPack -> Edh (Maybe Unique, ObjectStore)
+    evtAllocator :: ArgsPack -> Edh ObjectStore
     evtAllocator _ =
       throwEdhM UsageError "EventSource not constructable by script"
 
@@ -61,28 +60,19 @@ defSinkClass !defaultDt =
     evsAllocator ::
       "dtype" ?: Object ->
       ArgsPack -> -- allow/ignore arbitrary ctor args for descendant classes
-      Edh (Maybe Unique, ObjectStore)
+      Edh ObjectStore
     evsAllocator (defaultArg defaultDt -> dto) _ctorOtherArgs =
       withDataType dto $ \case
         DeviceDt (_dt :: DeviceDataType a) -> do
           evs <- newEventSinkEdh @a
-          return
-            ( Nothing,
-              HostStore $ toDyn $ SomeEventSink evs
-            )
+          pinAndStoreHostValue $ SomeEventSink evs
         DirectDt dt -> case direct'data'default dt of
           (_fill'val :: a) -> do
             evs <- newEventSinkEdh @a
-            return
-              ( Nothing,
-                HostStore $ toDyn $ SomeEventSink evs
-              )
+            pinAndStoreHostValue $ SomeEventSink evs
         (DummyDt _dti :: DataType a) -> do
           evs <- newEventSinkEdh @a
-          return
-            ( Nothing,
-              HostStore $ toDyn $ SomeEventSink evs
-            )
+          pinAndStoreHostValue $ SomeEventSink evs
 
     evs__init__ ::
       "dtype" ?: Object ->
@@ -113,7 +103,7 @@ defSinkClass !defaultDt =
     withThisSink withEvs = do
       !this <- edh'scope'this . contextScope . edh'context <$> edhThreadState
       (<|> throwEdhM EvalError "bug: this is not a Sink") $
-        case dynamicHostData this of
+        case objDynamicValue this of
           Nothing -> naM "not a Sink"
           Just (Dynamic trEvs evs) ->
             case trEvs `eqTypeRep` typeRep @SomeEventSink of

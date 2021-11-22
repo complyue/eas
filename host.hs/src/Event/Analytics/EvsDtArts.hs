@@ -8,7 +8,6 @@ import Data.Dynamic
 import Data.Maybe
 import qualified Data.Text as T
 import Data.Typeable hiding (typeRep)
-import Data.Unique
 import Event.Analytics.DataType
 import Event.Analytics.Source
 import Event.Analytics.XCHG
@@ -75,9 +74,9 @@ defineEvtFieldProperty fg dto nm = do
           let exitWithResult :: MappedEvs s' s t -> Edh EdhValue
               exitWithResult !evsResult =
                 EdhObject
-                  <$> createHostObjectM'
+                  <$> createArbiHostObjectM'
                     clsEvs
-                    (toDyn $ SomeEventSource evsResult)
+                    (SomeEventSource evsResult)
                     [dto]
           exitWithResult $ MappedEvs selfEvs $ return . fg
   withDataType dto $
@@ -100,12 +99,10 @@ defYesNoEvtDt clsEvs !dti = do
 
     defEdhProc'_ EdhMethod "__eq__" evsDtypeEqProc
     defEdhArt "__repr__" $ EdhString dti
-  !idObj <- newUniqueEdh
   !supersVar <- newTVarEdh []
   let dtYesNo =
         Object
-          { edh'obj'ident = idObj,
-            edh'obj'store = dtd,
+          { edh'obj'store = dtd,
             edh'obj'class = dtCls,
             edh'obj'supers = supersVar
           }
@@ -122,12 +119,12 @@ defYesNoEvtDt clsEvs !dti = do
   defEdhArt dti $ EdhObject dtYesNo
   return dtYesNo
   where
-    !dtd = HostStore $ toDyn dt
+    !dtd = HostStore $ wrapHostValue dt
     dt :: DataType YesNo
     dt = mkIntDataType @YesNo dti
 
-    dtypeAllocator :: Edh (Maybe Unique, ObjectStore)
-    dtypeAllocator = return (Nothing, dtd)
+    dtypeAllocator :: Edh ObjectStore
+    dtypeAllocator = return dtd
 
 defFloatEvtDt ::
   forall a.
@@ -170,24 +167,22 @@ defFloatEvtDt clsEvs !dtYesNo !dti = do
     defEdhProc'_ EdhMethod "__eq__" evsDtypeEqProc
     defEdhArt "__repr__" $ EdhString dti
 
-  !idObj <- newUniqueEdh
   !supersVar <- newTVarEdh []
   let !dtObj =
         Object
-          { edh'obj'ident = idObj,
-            edh'obj'store = dtd,
+          { edh'obj'store = dtd,
             edh'obj'class = dtCls,
             edh'obj'supers = supersVar
           }
   defEdhArt dti $ EdhObject dtObj
   return dtObj
   where
-    !dtd = HostStore $ toDyn dt
+    !dtd = HostStore $ wrapHostValue dt
     dt :: DataType a
     dt = mkFloatDataType @a dti
 
-    dtypeAllocator :: Edh (Maybe Unique, ObjectStore)
-    dtypeAllocator = return (Nothing, dtd)
+    dtypeAllocator :: Edh ObjectStore
+    dtypeAllocator = return dtd
 
 defIntEvtDt ::
   forall a.
@@ -230,24 +225,22 @@ defIntEvtDt clsEvs !dtYesNo !dti = do
     defEdhProc'_ EdhMethod "__eq__" evsDtypeEqProc
     defEdhArt "__repr__" $ EdhString dti
 
-  !idObj <- newUniqueEdh
   !supersVar <- newTVarEdh []
   let !dtObj =
         Object
-          { edh'obj'ident = idObj,
-            edh'obj'store = dtd,
+          { edh'obj'store = dtd,
             edh'obj'class = dtCls,
             edh'obj'supers = supersVar
           }
   defEdhArt dti $ EdhObject dtObj
   return dtObj
   where
-    !dtd = HostStore $ toDyn dt
+    !dtd = HostStore $ wrapHostValue dt
     dt :: DataType a
     dt = mkIntDataType @a dti
 
-    dtypeAllocator :: Edh (Maybe Unique, ObjectStore)
-    dtypeAllocator = return (Nothing, dtd)
+    dtypeAllocator :: Edh ObjectStore
+    dtypeAllocator = return dtd
 
     intPow :: a -> a -> a
     intPow _ 0 = 1
@@ -285,24 +278,22 @@ defBitsEvtDt clsEvs !dtYesNo !dti = do
     defEdhProc'_ EdhMethod "__eq__" evsDtypeEqProc
     defEdhArt "__repr__" $ EdhString dti
 
-  !idObj <- newUniqueEdh
   !supersVar <- newTVarEdh []
   let !dtObj =
         Object
-          { edh'obj'ident = idObj,
-            edh'obj'store = dtd,
+          { edh'obj'store = dtd,
             edh'obj'class = dtCls,
             edh'obj'supers = supersVar
           }
   defEdhArt dti $ EdhObject dtObj
   return dtObj
   where
-    !dtd = HostStore $ toDyn dt
+    !dtd = HostStore $ wrapHostValue dt
     dt :: DataType a
     dt = mkBitsDataType @a dti
 
-    dtypeAllocator :: Edh (Maybe Unique, ObjectStore)
-    dtypeAllocator = return (Nothing, dtd)
+    dtypeAllocator :: Edh ObjectStore
+    dtypeAllocator = return dtd
 
 defEvsDataType ::
   forall a.
@@ -314,24 +305,22 @@ defEvsDataType !dti !clsInit = do
   !dtCls <- mkEdhClass dti (allocObjM dtypeAllocator) [] $ do
     defEdhArt "__repr__" $ EdhString dti
     clsInit
-  !idObj <- newUniqueEdh
   !supersVar <- newTVarEdh []
   let !dtObj =
         Object
-          { edh'obj'ident = idObj,
-            edh'obj'store = dtd,
+          { edh'obj'store = dtd,
             edh'obj'class = dtCls,
             edh'obj'supers = supersVar
           }
   defEdhArt dti $ EdhObject dtObj
   return dtObj
   where
-    !dtd = HostStore $ toDyn dt
+    !dtd = HostStore $ wrapHostValue dt
     dt :: DataType a
     dt = DummyDt @a dti
 
-    dtypeAllocator :: Edh (Maybe Unique, ObjectStore)
-    dtypeAllocator = return (Nothing, dtd)
+    dtypeAllocator :: Edh ObjectStore
+    dtypeAllocator = return dtd
 
 evsCmpProc ::
   forall a.
@@ -347,9 +336,9 @@ evsCmpProc clsEvs !dtYesNo !cmp !other = do
     let exitWithResult :: MappedEvs s a YesNo -> Edh EdhValue
         exitWithResult !evsResult = do
           EdhObject
-            <$> createHostObjectM'
+            <$> createArbiHostObjectM'
               clsEvs
-              (toDyn $ SomeEventSource evsResult)
+              (SomeEventSource evsResult)
               [dtYesNo]
 
         withEvs =
@@ -391,9 +380,9 @@ evsOpProc clsEvs !op !other = do
         exitWithResult !evsResult = do
           dto <- getEvsDtype selfEvsObj
           EdhObject
-            <$> createHostObjectM'
+            <$> createArbiHostObjectM'
               clsEvs
-              (toDyn $ SomeEventSource evsResult)
+              (SomeEventSource evsResult)
               [dto]
 
         withEvs =
