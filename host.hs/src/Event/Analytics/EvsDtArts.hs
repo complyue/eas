@@ -91,7 +91,7 @@ defineEvtFieldProperty fg dto nm = do
 
 defYesNoEvtDt :: Object -> DataTypeIdent -> Edh Object
 defYesNoEvtDt clsEvs !dti = do
-  dtCls <- mkEdhClass dti (allocObjM dtypeAllocator) [] $ do
+  dtCls <- mkEdhClass' dti dtypeAllocator [] $ do
     defEdhProc'_ EdhMethod "(&&)" $ evsOpProc @YesNo clsEvs (.&.)
     defEdhProc'_ EdhMethod "(&&.)" $ evsOpProc @YesNo clsEvs (.&.)
     defEdhProc'_ EdhMethod "(||)" $ evsOpProc @YesNo clsEvs (.|.)
@@ -134,7 +134,7 @@ defFloatEvtDt ::
   DataTypeIdent ->
   Edh Object
 defFloatEvtDt clsEvs !dtYesNo !dti = do
-  !dtCls <- mkEdhClass dti (allocObjM dtypeAllocator) [] $ do
+  !dtCls <- mkEdhClass' dti dtypeAllocator [] $ do
     defEdhProc'_ EdhMethod "(==)" $ evsCmpProc @a clsEvs dtYesNo (==)
     defEdhProc'_ EdhMethod "(==.)" $ evsCmpProc @a clsEvs dtYesNo (==)
     defEdhProc'_ EdhMethod "(!=)" $ evsCmpProc @a clsEvs dtYesNo (/=)
@@ -192,7 +192,7 @@ defIntEvtDt ::
   DataTypeIdent ->
   Edh Object
 defIntEvtDt clsEvs !dtYesNo !dti = do
-  !dtCls <- mkEdhClass dti (allocObjM dtypeAllocator) [] $ do
+  !dtCls <- mkEdhClass' dti dtypeAllocator [] $ do
     defEdhProc'_ EdhMethod "(==)" $ evsCmpProc @a clsEvs dtYesNo (==)
     defEdhProc'_ EdhMethod "(==.)" $ evsCmpProc @a clsEvs dtYesNo (==)
     defEdhProc'_ EdhMethod "(!=)" $ evsCmpProc @a clsEvs dtYesNo (/=)
@@ -257,7 +257,7 @@ defBitsEvtDt ::
   DataTypeIdent ->
   Edh Object
 defBitsEvtDt clsEvs !dtYesNo !dti = do
-  !dtCls <- mkEdhClass dti (allocObjM dtypeAllocator) [] $ do
+  !dtCls <- mkEdhClass' dti dtypeAllocator [] $ do
     defEdhProc'_ EdhMethod "(==)" $ evsCmpProc @a clsEvs dtYesNo (==)
     defEdhProc'_ EdhMethod "(==.)" $ evsCmpProc @a clsEvs dtYesNo (==)
     defEdhProc'_ EdhMethod "(!=)" $ evsCmpProc @a clsEvs dtYesNo (/=)
@@ -302,7 +302,7 @@ defEvsDataType ::
   Edh () ->
   Edh Object
 defEvsDataType !dti !clsInit = do
-  !dtCls <- mkEdhClass dti (allocObjM dtypeAllocator) [] $ do
+  !dtCls <- mkEdhClass' dti dtypeAllocator [] $ do
     defEdhArt "__repr__" $ EdhString dti
     clsInit
   !supersVar <- newTVarEdh []

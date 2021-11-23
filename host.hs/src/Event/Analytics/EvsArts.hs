@@ -25,7 +25,7 @@ defineEvsArts = exportM_ $ do
 
 defEventSourceClass :: Edh Object
 defEventSourceClass =
-  defEdhClass "EventSource" (allocObjM evtAllocator) [] $ do
+  defEdhClass' "EventSource" evtAllocator [] $ do
     defEdhProc'_ EdhMethod "__repr__" evtReprProc
     defEdhProperty_ "dtype" evsDtypeProc Nothing
   where
@@ -51,7 +51,7 @@ withThisEventSource withEvs = do
 
 defSinkClass :: Object -> Edh Object
 defSinkClass !defaultDt =
-  defEdhClass "Sink" (allocObjM evsAllocator) [] $ do
+  defEdhClass' "Sink" evsAllocator [] $ do
     defEdhProc'_ EdhMethod "__init__" evs__init__
     defEdhProc'_ EdhMethod "__repr__" evsReprProc
     defEdhProc'_ EdhMethod "__show__" evsShowProc
