@@ -1,0 +1,91 @@
+
+# todo make els analyze (-?) and (:-)
+i, r, f, rPcnt, fPcnt = 'i', 'r', 'f', 'rPcnt', 'fPcnt'
+
+
+# %% # 导入通用功能, 通用计量单位, 等等
+import * as Math 'math'
+import * 'uom/duration'
+
+# %% # 基础数据类型
+
+{## 投资标的 #}
+data Instru(
+  sid: 'String', # Security ID
+
+  # TODO 更多属性, 可变或者不可变的, 描述投资标的
+) pass
+
+# %% # 基础数据
+
+au = Instru( 'au' )
+rb = Instru( 'rb' )
+
+
+# %% # 简单的单向涨跌, 靠档触发的条件规则另行细化
+
+event Rise( i: Instru, pcnt: 1%~%, dur: 1ms~100d, ) pass
+event Fall( i: Instru, pcnt: 1%~100%, dur: 1ms~100d, ) pass
+
+
+# %% # 回撤: 大涨后下跌
+
+event DrawDown( i: Instru, rise: Rise, fall: Fall, ) pass
+
+DrawDown( @i, @r, @f, ) :- {
+  Rise@r( i as @i, pcnt as @rPcnt, ) | @rPcnt > 20% # 先有一个足够大的上涨
+  Fall@f( @i, @fPcnt, ) | @fPcnt > 3% # 再来一个足够大的下跌
+} | @fPcnt / @rPcnt > 10% # 跌幅相对涨幅也要足够大
+
+
+# %% # 反弹: 深跌后上涨
+
+event Bounce( i: Instru, fall: Fall, rise: Rise, ) pass
+
+Bounce( @i, @f, @r, ) :- {
+  Fall@f( @i, @fPcnt, ) | @fPcnt > 20%
+  Rise@r( @i, @rPcnt, ) | @rPcnt > 3%
+} | { @rPcnt / @fPcnt > 10% }
+
+
+# %% # 输出日志报告指定的事件发生情况
+
+DrawDown( @i, @r, @f, ) -? {
+  console.warn<| @i ++ ' 发生回撤 - ' ++ @r.dur ++ ' 上涨 ' ++ @r.pcnt ++ ' 后 ' ++ @f.dur ++ ' 下跌 ' ++ @f.pcnt
+}
+
+Bounce( @i, @f, @r, ) -? {
+  console.warn<| @i ++ ' 发生反弹 - ' ++ @f.dur ++ ' 下跌 ' ++ @f.pcnt ++ ' 后 ' ++ @r.dur ++ ' 上涨 ' ++ @r.pcnt
+}
+
+
+# %{ # 手工产生事件测试
+
+# %% #
+Rise( au, 2%, 1d )
+# %% #
+Rise( au, 7%, 2d )
+# %% #
+Rise( au, 18%, 3d )
+# %% #
+Rise( au, 25%, 4d )
+
+# %% #
+Fall( au, 2%, 1d )
+# %% #
+Fall( au, 7%, 2d )
+
+# %% #
+Rise( au, 3%, 1d )
+
+# %% #
+Fall( au, 19%, 4d )
+# %% #
+Fall( au, 21%, 5d )
+
+# %% #
+Rise( au, 5%, 1d )
+# %% #
+Rise( au, 9%, 2d )
+
+# %}
