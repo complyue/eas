@@ -1,4 +1,13 @@
 
+{# TODO: CEP syntax
+
+  * logical block `within` certain time window
+  * (,) for logical AND
+  * (;) for logical OR
+
+ #}
+
+
 # todo make els analyze (-?) and (:-)
 i, r, f, rPcnt, fPcnt = 'i', 'r', 'f', 'rPcnt', 'fPcnt'
 
